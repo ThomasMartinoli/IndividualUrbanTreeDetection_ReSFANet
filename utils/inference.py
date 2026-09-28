@@ -1,8 +1,6 @@
 import numpy as np
 
-import argparse
 import os
-import sys
 
 import rasterio
 import rasterio.transform
@@ -81,14 +79,15 @@ def _tiled_peak_finding(path,input_size,overlap,min_distance,threshold_abs,thres
         all_indices = np.concatenate(all_indices,axis=0)
         return all_indices
 
-def run_tiled_inference(model,input_path,output_path,min_distance,threshold_abs,threshold_rel):
+def run_tiled_inference(model,input_path,output_path,min_distance,threshold_abs,threshold_rel,tile_size=2048,overlap=32):
+    # tile_size + 2*overlap must match the input size the model was built with
     temp_path = tempfile.NamedTemporaryFile(suffix='.tif').name
     _tiled_inference(
         model=model,
         input_path=input_path,
         output_path=temp_path,
-        tile_size=2048,
-        overlap=32)
+        tile_size=tile_size,
+        overlap=overlap)
 
     with rasterio.open(temp_path,'r') as f:
         meta = f.meta

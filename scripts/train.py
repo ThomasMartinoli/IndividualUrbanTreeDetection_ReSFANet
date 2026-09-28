@@ -2,15 +2,14 @@ import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 
-import glob
 import numpy as np
 
 from models import SFANet
-from utils.preprocess import *
+from utils.preprocess import get_preprocess
 
 import argparse
 import os
-import sys
+import shutil
 
 import h5py as h5
 
@@ -45,12 +44,19 @@ def main():
 
     args = parser.parse_args()
 
+    # Specify the GPU to use (e.g., "0" is the first GPU, "1" is the second GPU)
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Replace with the index of the GPU you want to use
+    #List visible devices (should only show the one you specified)
     physical_devices = tf.config.list_physical_devices('GPU')
-    for device in physical_devices:
+    if physical_devices:
         try:
-            tf.config.experimental.set_memory_growth(device, True)
-        except:
-            pass
+        #Set memory growth for the specified GPU
+            tf.config.experimental.set_memory_growth(physical_devices[0], True)
+            print(f"Using GPU: {physical_devices[0]}")
+        except Exception as e:
+            print(f"Error setting memory growth: {e}")
+    else:
+        print("No GPU found.")
 
     f = h5.File(args.data,'r')
     bands = f.attrs['bands']
@@ -58,21 +64,28 @@ def main():
     val_confidence = f['val/confidence'][:]
     val_attention = f['val/attention'][:]
     
-    preprocess_fn = eval(f'preprocess_{bands}')
-    
-    model, testing_model = SFANet.build_model(
-        val_images.shape[1:],
-        preprocess_fn=preprocess_fn)
-    opt = Adam(args.lr)
-    model.compile(optimizer=opt, loss=['mse','binary_crossentropy'], loss_weights=[1,0.1])
+    preprocess_fn = get_preprocess(bands)
 
+    strategy = tf.distribute.MirroredStrategy()
+    print(f"Numero di GPU utilizzate: {strategy.num_replicas_in_sync}")
+
+    with strategy.scope():
+        model, testing_model = SFANet.build_model(
+            val_images.shape[1:],
+            preprocess_fn=preprocess_fn)
+        opt = Adam(args.lr)
+        model.compile(optimizer=opt, loss=['mse','binary_crossentropy'], loss_weights=[1,0.1])
+    
+    
+    print('this is the summary--------------')
     print(model.summary())
     
     os.makedirs(args.log,exist_ok=True)
 
     callbacks = []
 
-    weights_path = os.path.join(args.log, 'weights.best.h5')
+    # Keras 3: with save_weights_only the file name must end in .weights.h5
+    weights_path = os.path.join(args.log, 'best.weights.h5')
     callbacks.append(ModelCheckpoint(
             filepath=weights_path,
             monitor='val_loss',
@@ -80,7 +93,7 @@ def main():
             save_best_only=True,
             save_weights_only=True,
             ))
-    weights_path = os.path.join(args.log, 'weights.latest.h5')
+    weights_path = os.path.join(args.log, 'latest.weights.h5')
     callbacks.append(ModelCheckpoint(
             filepath=weights_path,
             monitor='val_loss',
@@ -89,21 +102,22 @@ def main():
             save_weights_only=True,
             ))
     tensorboard_path = os.path.join(args.log,'tensorboard')
-    os.system("rm -rf " + tensorboard_path)
+    shutil.rmtree(tensorboard_path, ignore_errors=True)
     callbacks.append(tf.keras.callbacks.TensorBoard(tensorboard_path))
 
     gen = generator(f,args.batch_size)
     y_val = (val_confidence, val_attention)
 
+    # the generator already yields batches of args.batch_size;
+    # use_multiprocessing no longer exists in Keras 3
     model.fit(
             gen,
             validation_data=(val_images,y_val),
-            batch_size=args.batch_size,
+            validation_batch_size=args.batch_size,
             epochs=args.epochs,
             steps_per_epoch=len(f['train/images'])//args.batch_size+1,
             verbose=True,
-            callbacks=callbacks,
-            use_multiprocessing=True)
+            callbacks=callbacks)
 
 if __name__ == '__main__':
     main()

@@ -1,79 +1,106 @@
-## Urban Tree Detection ##
+## Urban Tree Detection (ResNet50 + SFANet, TensorFlow) ##
 
-This repository provides code for training and evaluating a convolutional neural network (CNN) to detect tree in urban environments with aerial imagery.   The CNN takes multispectral imagery as input and outputs a confidence map indicating the locations of trees. The individual tree locations are found by local peak finding. In our study site in Southern California, we determined that, using our trained model, 73.6% of the detected trees matched to actual trees, and 73.3% of the trees in the study area were detected.
+Tree detection from multispectral aerial imagery: a SFANet-style network with a ResNet50 encoder outputs a confidence map, and local peak finding gives the tree locations.
+
+### Workflow ###
+
+    prepare_6ch  ->  train  ->  tune_percentile  ->  calculate_ap  ->  test
+
+| Step | Script | Output (in `<log>` unless noted) |
+|------|--------|-----------------------------------|
+| 1 | `scripts/prepare_6ch.py` | `<data>` (hdf5 file) |
+| 2 | `scripts/train.py` | `best.weights.h5`, `latest.weights.h5` |
+| 3 | `scripts/tune_percentile.py` | `params.yaml`, `percentiles.json`, `results_by_threshold.json` |
+| 4 | `scripts/calculate_ap.py` | `ap_results.txt`, `precision_recall_curve.png` |
+| 5 | `scripts/test.py` | `results.txt` |
+
+Run all commands from the root of the repository. `<data>` is the hdf5 file, `<log>` the log directory.
+
+Weights are saved as `best.weights.h5` / `latest.weights.h5` (Keras 3 naming); log directories trained with the previous version (`weights.best.h5`) are still read by all scripts.
 
 ### Installation ###
 
-The model is implemented with Tensorflow 2.4.1.  We have provided an `environment.yml` file so that you can easily create a conda environment with the dependencies installed:
-
-    conda env create 
+    conda env create
     conda activate urban-tree-detection
 
-### Dataset ###
+Requires TensorFlow >= 2.16 (Keras 3); tested with Python 3.13, TensorFlow 2.21.0, Keras 3.15.0.
 
-The data used in our paper can be found in [a separate Github repository](https://github.com/jonathanventura/urban-tree-detection-data/).
+If the GPU is not found (`Cannot dlopen some GPU libraries` in the log), export the CUDA libraries installed by pip:
 
-To prepare a dataset for training and testing, run the `prepare.py` script.  You can specify the bands in the input raster using the `--bands` flag (currently `RGB` and `RGBN` are supported.)
+    export LD_LIBRARY_PATH=$(ls -d $CONDA_PREFIX/lib/python*/site-packages/nvidia/*/lib | tr '\n' ':')$LD_LIBRARY_PATH
 
-    python3 -m scripts.prepare <path to dataset> <path to hdf5 file> --bands <RGB or RGBN>
+GPU selection: `train.py` uses GPU 0, `calculate_ap.py` and `test.py` GPU 1 (set in the code), `tune_percentile.py` has `--gpu` (default 1).
 
-### Training ###
+### 1. Prepare the dataset ###
 
-To train the model, run the `train.py` script.
+    python3 -m scripts.prepare_6ch <dataset> <data> --bands <6ch|RGB|RGBN> --sigma 6 --augment --csv_dir <csv folder>
 
-    python3 -m scripts.train <path to hdf5 file> <path to log directory>
+Dataset layout:
 
-### Hyperparameter tuning ###
+    <dataset>/images/<name>.tif        6-channel images, bands DB,B,G,R,RE,NIR
+    <dataset>/<csv folder>/<name>.csv  x,y tree locations, one header line (no csv = no trees)
+    <dataset>/train.txt, val.txt, test.txt   one image name per line
 
-The model outputs a confidence map, and we use local peak finding to isolate individual trees.  We use the Optuna package to determine the optimal parameters of the peaking finding algorithm.  We search for the best of hyperparameters to maximize F-score on the validation set.
+| Option | Meaning |
+|--------|---------|
+| `--bands` | `6ch` (default): all bands; `RGB`: R,G,B; `RGBN`: R,G,B,NIR. RGB and RGBN are picked from the 6 channels |
+| `--augment` | 4 rotations and a flip (x8), training split only |
+| `--sigma` | Gaussian size (pixels) of the confidence maps; pass it explicitly |
+| `--csv_dir` | folder with the ground-truth csv, all splits (default `<dataset>/csv`) |
+| `--test_csv_dir` | folder with the ground-truth csv for the test split only (e.g. all trees instead of a filtered ground truth) |
+| `--train`, `--val`, `--test` | split files (defaults `train.txt`, `val.txt`, `test.txt`); an empty file gives an hdf5 without that split |
 
-    python3 -m scripts.tune <path to hdf5 file> <path to log directory>
+The script stops if no csv is found for a split. Test csv files without the `test_` prefix used in `test.txt` are matched automatically. `tune_percentile.py` needs the `val` split, `calculate_ap.py` and `test.py` the `test` split.
 
-### Evaluation on test set ###
+### 2. Training ###
 
-Once hyperparameter tuning finishes, use the `test.py` script to compute evaluation metrics on the test set.
+    python3 -m scripts.train <data> <log> [--lr 1e-4] [--epochs 500] [--batch_size 8]
 
-    python3 -m scripts.test <path to hdf5 file> <path to log directory> 
+### 3. Percentile tuning ###
+
+Chooses the absolute detection threshold on the **validation** set:
+
+1. predicts the confidence maps of the validation images;
+2. splits them into images with and without trees (from the ground truth);
+3. computes the percentiles (default 90, 92, 95, 97, 99) of the values clipped to [0, 1] for each group: these are the candidate thresholds;
+4. runs detection and matching for every candidate and keeps the best F-score.
+
+<!-- -->
+
+    python3 -m scripts.tune_percentile <data> <log> [--cache_preds]
+
+Options: `--percentiles`, `--min_distance 3`, `--max_distance 20` (pixels), `--metric fscore|precision|recall`, `--eval_group all|tree`, `--split val`, `--gpu`, `--weights`. `--cache_preds` saves the predictions in `<log>/val_preds.npy` and reuses them.
+
+The result is written to `<log>/params.yaml` (`mode: abs`, `min_distance`, `threshold_abs`, `threshold_rel`), read by `calculate_ap.py`, `test.py` and `inference.py`.
+
+### 4. Average precision ###
+
+    python3 -m scripts.calculate_ap <data> <log> [--max_distance 20]
+
+Average precision on the test set over a range of thresholds. The point of the precision-recall curve closest to the `threshold_abs` in `<log>/params.yaml` is marked as `TUNED` (and reported in `ap_results.txt`); without `params.yaml` only the best-F1 point is shown.
+
+### 5. Test ###
+
+    python3 -m scripts.test <data> <log> [--max_distance 20] [--dataset <dataset>]
+
+Applies the parameters in `<log>/params.yaml` to the test set and writes precision, recall, F-score and RMSE (pixels) to `<log>/results.txt`.
+
+With `--dataset` (the folder with `images/<name>.tif` used by `prepare_6ch`), it also saves the geo-referenced outputs of every test image in `<log>`: the confidence map in `Saliency_Map/Sal_Map_<name>.tif` and the true positives, false positives and false negatives in `Labeled_prediction/<name>_labaled_pred.geojson`.
 
 ### Inference on a large raster ###
 
-To detect trees in rasters and produce GeoJSONs containing the geo-referenced trees, use the `inference.py` script.  The script can process a single raster or a directory of rasters.
+    python3 -m scripts.inference <input tiff or directory> <output json or directory> <log> --bands <RGB|RGBN|6ch>
 
-    python3 -m scripts.inference <input tiff or directory> \
-                                 <output json or directory> \
-                                 <path to log directory> \
-                                 --bands <RGB or RGBN>
+Produces GeoJSON files with the geo-referenced trees, using the best weights and `params.yaml` from `<log>`. The raster bands must be in the same order used in training: `6ch` expects `DB,B,G,R,RE,NIR`, `RGB` and `RGBN` expect R,G,B(,NIR) as first bands.
 
-### Pre-trained weights ###
+### License ###
 
-The following pre-trained models are available:
+This repository is released under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) (see `LICENSE`): it can be used, modified and shared for noncommercial purposes only.
 
-| Imagery   | Years     | Bands    | Region                         | Log Directory Archive     |
-|-----------|-----------|----------|--------------------------------|---------------------------|
-| 60cm NAIP | 2016-2020 | RGBN     | Northern & Southern California | [OneDrive](https://cpslo-my.sharepoint.com/:u:/g/personal/jventu09_calpoly_edu/ES31TXWdeGRFj_hn3O4qZpoBfhye_ssuULyaC2WB7yaJTw?e=cYkjMf) |
-| 60cm NAIP | 2016-2020 | RGB      | Northern & Southern California | [OneDrive](https://cpslo-my.sharepoint.com/:u:/g/personal/jventu09_calpoly_edu/Eay6v76obwpIqJmeK23_4zUBNb5EwM6R36wcSqh_BWKj_g?e=JrOwkO)
-| 60cm NAIP | 2020      | RGBN     | Southern California            | [OneDrive](https://cpslo-my.sharepoint.com/:u:/g/personal/jventu09_calpoly_edu/EQMSOBZjuDFCjj_PNgSDXZ0BMQUcGQKUO_SlJ5SGH2Bl9Q?e=9RhhpN)
-
-We also provide an [example NAIP 2020 tile from Los Angeles](https://cpslo-my.sharepoint.com/:i:/g/personal/jventu09_calpoly_edu/EU1xfporUiBDvT2ZOpW0raEBOqJcJQpqcOv1lKNMCgbCdQ?e=zsgxXs) and an [example GeoJSON predictions file from the RGBN 2016-2020 model](https://cpslo-my.sharepoint.com/:u:/g/personal/jventu09_calpoly_edu/EUHYGnWdqL5FvYc1wm9hSl8BBdL2JEgMSlqS1FiTdB0EWA?e=uZMIBc).  
-
-You can explore a [map of predictions for the entire urban reserve of California](https://jventu09.users.earthengine.app/view/urban-tree-detector) (based on NAIP 2020 imagery) created using this pre-trained model.
-
-### Using your own data ###
-
-To train on your own data, you will need to organize the data into the format expected by `prepare.py`.
-
-* The image crops (or "chips") should all be the same size and the side length should be a multiple of 32.
-* The code is currently designed for three-band (RGB) or four-band (red, green, blue, near-IR) imagery.  To handle more bands, you would need to add an appropriate preprocessing function in `utils/preprocess.py`.  If RGB are not in the bands, then `models/VGG.py` would need to be modified, as the code expects the first three bands to be RGB to match the pre-trained weights.
-* Store the images as TIFF or PNG files in a subdirectory called `images`.
-* For each image, store a csv file containing x,y coordinates for the tree locations in a file `<name>.csv` where `<name>.tif`, `<name>.tiff`, or `<name>.png` is the corresponding image. The csv file should have a single header line.
-* Create the files `train.txt`, `val.txt`, and `test.txt` to specify the names of the files in each split.
+It is derived from [jonathanventura/urban-tree-detection](https://github.com/jonathanventura/urban-tree-detection), Copyright (c) 2022 Jonathan Ventura, released under the MIT License (see `LICENSE-MIT`). The portions of the code coming from that repository remain available under the MIT License.
 
 ### Citation ###
 
-If you use or build upon this repository, please cite our paper:
+This work builds upon the urban tree detection method and code by Ventura et al. If you use this repository, please also cite their paper:
 
-J. Ventura, C. Pawlak, M. Honsberger, C. Gonsalves, J. Rice, N.L.R. Love, S. Han, V. Nguyen, K. Sugano, J. Doremus, G.A. Fricker, J. Yost, and M. Ritter (2024). [Individual Tree Detection in Large-Scale Urban Environments using High-Resolution Multispectral Imagery.](https://www.sciencedirect.com/science/article/pii/S1569843224002024)  International Journal of Applied Earth Observation and Geoinformation, 130, 103848.
-
-### Acknowledgments ###
-
-This project was funded by CAL FIRE (award number: 8GB18415) the US Forest Service (award number: 21-CS-11052021-201), and an incubation grant from the Data Science Strategic Research Initiative at California Polytechnic State University.
+J. Ventura, C. Pawlak, M. Honsberger, C. Gonsalves, J. Rice, N.L.R. Love, S. Han, V. Nguyen, K. Sugano, J. Doremus, G.A. Fricker, J. Yost, and M. Ritter (2024). [Individual Tree Detection in Large-Scale Urban Environments using High-Resolution Multispectral Imagery.](https://www.sciencedirect.com/science/article/pii/S1569843224002024) International Journal of Applied Earth Observation and Geoinformation, 130, 103848.

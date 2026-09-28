@@ -1,8 +1,10 @@
-import numpy as np 
-from tensorflow.keras import Model, layers, initializers, losses
-from .VGG import VGG, BaseConv
-from tensorflow.keras import backend as K
-import tensorflow as tf
+import os
+from tensorflow.keras import Model, layers
+from .VGG import  BaseConv
+
+from .RESNET import Resnet50nch
+
+from keras import ops
 
 class BackEnd(Model):
     def __init__(self,half_res=False):
@@ -33,24 +35,24 @@ class BackEnd(Model):
 
         x = self.upsample(conv5_3)
 
-        x = tf.concat([x, conv4_3], axis=-1)
+        x = ops.concatenate([x, conv4_3], axis=-1)
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.upsample(x)
 
-        x = tf.concat([x, conv3_3], axis=-1)
+        x = ops.concatenate([x, conv3_3], axis=-1)
         x = self.conv3(x)
         x = self.conv4(x)
         x = self.upsample(x)
 
-        x = tf.concat([x, conv2_2], axis=-1)
+        x = ops.concatenate([x, conv2_2], axis=-1)
         x = self.conv5(x)
         x = self.conv6(x)
         x = self.conv7(x)
         
         if not self.half_res:
             x = self.upsample(x)
-            x = tf.concat([x, conv1_2], axis=-1)
+            x = ops.concatenate([x, conv1_2], axis=-1)
             x = self.conv8(x)
             x = self.conv9(x)
             x = self.conv10(x)
@@ -60,8 +62,7 @@ class BackEnd(Model):
 class SFANet(Model):
     def __init__(self,half_res=True):
         super(SFANet,self).__init__()
-        output_layers = [3,6,9,12] if half_res else [1,3,6,9,12]
-        self.vgg = VGG(output_layers=output_layers)
+        self.resnet=Resnet50nch()
         self.amp = BackEnd(half_res=half_res)
         self.dmp = BackEnd(half_res=half_res)
         
@@ -70,7 +71,7 @@ class SFANet(Model):
     
     def call(self,inputs):
         x = inputs
-        x = self.vgg(x)
+        x = self.resnet(x)
         amp_out = self.amp(x)
         dmp_out = self.dmp(x)
         
@@ -88,10 +89,20 @@ def build_model(input_shape,preprocess_fn=None,bce_loss_weight=0.1,half_res=Fals
     sfanet = SFANet(half_res=half_res)
     dmp, amp = sfanet(image_preprocessed)
     outputs = [dmp,amp]
-    sfanet.vgg.load_pretrained_vgg(image_preprocessed.shape[1:])
+    print('carico i pesi resnet')
+    sfanet.resnet.load_pretrained_weights(image_preprocessed.shape[-1])
+    print('caricati i pesi resnet')
 
     training_model = Model(inputs=image,outputs=outputs)
     testing_model = Model(inputs=image,outputs=dmp)
     
     return training_model, testing_model
 
+def find_weights(log,name='best'):
+    """ Path of the <name> weights in the log directory: <name>.weights.h5 (Keras 3),
+        or weights.<name>.h5 for models trained with the previous version of train.py. """
+    path = os.path.join(log,f'{name}.weights.h5')
+    legacy_path = os.path.join(log,f'weights.{name}.h5')
+    if not os.path.exists(path) and os.path.exists(legacy_path):
+        return legacy_path
+    return path

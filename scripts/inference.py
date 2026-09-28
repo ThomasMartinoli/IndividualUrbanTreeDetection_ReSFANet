@@ -1,20 +1,22 @@
-import numpy as np
-
 from models import SFANet
-from utils.preprocess import *
+from utils.preprocess import preprocess_RGB, preprocess_RGBN
+from utils.preprocess_6ch import preprocess_6bands
 from utils.inference import run_tiled_inference
 
 import argparse
 import os
-import sys
 import yaml
 
-import rasterio
-
 import tqdm
-from tqdm import trange
 
 import glob
+
+# bands -> (preprocess function, number of channels read from the raster)
+BANDS = {
+    'RGB': (preprocess_RGB, 3),
+    'RGBN': (preprocess_RGBN, 4),
+    '6ch': (preprocess_6bands, 6),
+}
 
 def main():
     parser = argparse.ArgumentParser()
@@ -22,7 +24,8 @@ def main():
     parser.add_argument('input', help='path to input tiff file or directory')
     parser.add_argument('output', help='path to output json file or directory')
     parser.add_argument('log', help='path to log directory')
-    parser.add_argument('--bands', default='RGBN', help='input bands')
+    parser.add_argument('--bands', default='RGBN', choices=list(BANDS),
+                        help='input bands: RGB, RGBN or 6ch (raster bands ordered as in training; 6ch = DB,B,G,R,RE,NIR)')
     parser.add_argument('--tile_size', type=int, default=2048, help='tile size')
     parser.add_argument('--overlap', type=int, default=32, help='overlap between tiles')
 
@@ -42,12 +45,13 @@ def main():
         threshold_abs = None
         threshold_rel = 0.2
     
-    weights_path = os.path.join(args.log,'weights.best.h5')
+    weights_path = SFANet.find_weights(args.log)
     padded_size = args.tile_size + args.overlap*2
-    preprocess = eval(f'preprocess_{args.bands}')
-    training_model, model = SFANet.build_model((padded_size,padded_size,len(args.bands)),preprocess_fn=preprocess)
+    preprocess, nbands = BANDS[args.bands]
+    training_model, model = SFANet.build_model((padded_size,padded_size,nbands),preprocess_fn=preprocess)
     training_model.load_weights(weights_path)
-    
+
+    tiling = dict(tile_size=args.tile_size,overlap=args.overlap)
     if os.path.isdir(args.input):
         os.makedirs(args.output,exist_ok=True)
         paths = sorted(glob.glob(os.path.join(args.input,'*.tif')) + glob.glob(os.path.join(args.input,'*.tiff')))
@@ -55,10 +59,10 @@ def main():
         for input_path in paths:
             output_path = os.path.join(args.output,os.path.basename(input_path).split('.')[0]+'.json')
             if not os.path.exists(output_path):
-                run_tiled_inference(model,input_path,output_path,min_distance=min_distance,threshold_abs=threshold_abs,threshold_rel=threshold_rel)
+                run_tiled_inference(model,input_path,output_path,min_distance=min_distance,threshold_abs=threshold_abs,threshold_rel=threshold_rel,**tiling)
             pbar.update(1)
     else:
-        run_tiled_inference(model,args.input,args.output,min_distance=min_distance,threshold_abs=threshold_abs,threshold_rel=threshold_rel)
+        run_tiled_inference(model,args.input,args.output,min_distance=min_distance,threshold_abs=threshold_abs,threshold_rel=threshold_rel,**tiling)
 
 if __name__ == '__main__':
     main()

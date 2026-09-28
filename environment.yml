@@ -1,16 +1,25 @@
 name: urban-tree-detection
+channels:
+  - conda-forge
 dependencies:
-  - python=3.8
-  - tensorflow-gpu=2.4.1
+  - python=3.13
+  # data / geospatial
   - numpy
+  - scipy
+  - h5py
   - imageio
+  - tqdm
+  - pyyaml
   - rasterio
   - geopandas
-  - h5py
-  - scipy
-  - tqdm
+  - shapely
+  # detection / evaluation
   - scikit-image
   - scikit-learn
+  # plots
+  - matplotlib
   - pip
   - pip:
-    - optuna
+    # TensorFlow >= 2.16 is required (Keras 3: `from keras import ops`).
+    # Tested with tensorflow 2.21.0 / keras 3.15.0.
+    - tensorflow[and-cuda]>=2.16
