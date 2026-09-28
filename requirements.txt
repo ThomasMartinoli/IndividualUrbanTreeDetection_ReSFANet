@@ -1,0 +1,20 @@
+# pip install -r requirements.txt (Python 3.13)
+# data / geospatial
+numpy
+scipy
+h5py
+imageio
+tifffile
+tqdm
+pyyaml
+rasterio
+geopandas
+shapely
+# detection / evaluation
+scikit-image
+scikit-learn
+# plots
+matplotlib
+# TensorFlow >= 2.16 is required (Keras 3: `from keras import ops`).
+# Tested with tensorflow 2.21.0 / keras 3.15.0.
+tensorflow[and-cuda]>=2.16

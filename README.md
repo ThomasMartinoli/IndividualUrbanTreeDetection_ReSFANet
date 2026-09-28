@@ -20,14 +20,30 @@ Weights are saved as `best.weights.h5` / `latest.weights.h5` (Keras 3 naming); l
 
 ### Installation ###
 
+Requires TensorFlow >= 2.16 (Keras 3); tested with Python 3.13, TensorFlow 2.21.0, Keras 3.15.0.
+
+With conda:
+
     conda env create
     conda activate urban-tree-detection
 
-Requires TensorFlow >= 2.16 (Keras 3); tested with Python 3.13, TensorFlow 2.21.0, Keras 3.15.0.
+With a Python virtual environment (venv):
 
-If the GPU is not found (`Cannot dlopen some GPU libraries` in the log), export the CUDA libraries installed by pip:
+    python3.13 -m venv ~/.virtualenvs/urbantree
+    source ~/.virtualenvs/urbantree/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
 
+If the GPU is not found (`Cannot dlopen some GPU libraries` in the log), export the CUDA libraries installed by pip (after activating the environment; needed in every new shell):
+
+    # conda
     export LD_LIBRARY_PATH=$(ls -d $CONDA_PREFIX/lib/python*/site-packages/nvidia/*/lib | tr '\n' ':')$LD_LIBRARY_PATH
+    # venv
+    export LD_LIBRARY_PATH=$(ls -d $VIRTUAL_ENV/lib/python*/site-packages/nvidia/*/lib | tr '\n' ':')$LD_LIBRARY_PATH
+
+Check that TensorFlow sees the GPUs:
+
+    python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
 
 GPU selection: `train.py` uses GPU 0, `calculate_ap.py` and `test.py` GPU 1 (set in the code), `tune_percentile.py` has `--gpu` (default 1).
 

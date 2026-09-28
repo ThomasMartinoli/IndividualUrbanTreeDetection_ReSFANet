@@ -8,6 +8,7 @@ dependencies:
   - scipy
   - h5py
   - imageio
+  - tifffile
   - tqdm
   - pyyaml
   - rasterio
