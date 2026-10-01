@@ -212,9 +212,7 @@ class Resnet50nch(Model):
             if 'block' in name:
                 layers=self.get_layer(name)
                 for layer in layers._flatten_layers(include_self=False):
-                    # print('---'*50)
                     layer_name=layer.name
-                    # print(layer_name)
                     weights = resnet_base.get_layer(layer_name).get_weights()
                     layer.set_weights(weights)
             if name == 'conv1_conv':

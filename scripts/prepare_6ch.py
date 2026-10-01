@@ -85,7 +85,6 @@ def load_data(dataset_path, names, sigma, csv_dir=None):
         image = image[..., BAND_INDICES[args.bands]]
 
         csv_path = find_csv(dataset_path, name, csv_dir)
-        #print(csv_path)
 
         if os.path.exists(csv_path):
             points = np.loadtxt(csv_path, delimiter=',', skiprows=1).astype('int')

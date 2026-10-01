@@ -18,7 +18,6 @@ Workflow: prepare_6ch -> train -> tune_percentile -> calculate_ap -> test
 import argparse
 import json
 import os
-from datetime import datetime
 
 import h5py as h5
 import numpy as np
@@ -87,9 +86,6 @@ def main():
                         help='save/reuse <log>/<split>_preds.npy')
     args = parser.parse_args()
 
-    print('-' * 60)
-    print("Ora di esecuzione:", datetime.now())
-    print('-' * 60)
 
     setup_gpu(args.gpu)
 

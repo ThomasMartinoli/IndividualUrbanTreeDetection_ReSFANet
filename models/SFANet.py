@@ -89,9 +89,7 @@ def build_model(input_shape,preprocess_fn=None,bce_loss_weight=0.1,half_res=Fals
     sfanet = SFANet(half_res=half_res)
     dmp, amp = sfanet(image_preprocessed)
     outputs = [dmp,amp]
-    print('carico i pesi resnet')
     sfanet.resnet.load_pretrained_weights(image_preprocessed.shape[-1])
-    print('caricati i pesi resnet')
 
     training_model = Model(inputs=image,outputs=outputs)
     testing_model = Model(inputs=image,outputs=dmp)

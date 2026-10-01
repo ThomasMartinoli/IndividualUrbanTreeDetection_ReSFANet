@@ -54,14 +54,13 @@ def main():
     gts = f[f'test/gt'][:]
 
     bands = f.attrs['bands']
-    print(bands)
 
     training_model, model = SFANet.build_model(
         images.shape[1:],
         preprocess_fn=get_preprocess(bands))
 
     weights_path = SFANet.find_weights(args.log)
-    print(f'carico i pesi finali: {weights_path}')
+    print(f'----- loading weights: {weights_path} -----')
     training_model.load_weights(weights_path)
 
     print('----- getting predictions from trained model -----')

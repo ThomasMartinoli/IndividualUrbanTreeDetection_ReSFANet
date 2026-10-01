@@ -67,7 +67,7 @@ def main():
     preprocess_fn = get_preprocess(bands)
 
     strategy = tf.distribute.MirroredStrategy()
-    print(f"Numero di GPU utilizzate: {strategy.num_replicas_in_sync}")
+    print(f"Number of replicas: {strategy.num_replicas_in_sync}")
 
     with strategy.scope():
         model, testing_model = SFANet.build_model(
@@ -77,8 +77,7 @@ def main():
         model.compile(optimizer=opt, loss=['mse','binary_crossentropy'], loss_weights=[1,0.1])
     
     
-    print('this is the summary--------------')
-    print(model.summary())
+    model.summary()
     
     os.makedirs(args.log,exist_ok=True)
 

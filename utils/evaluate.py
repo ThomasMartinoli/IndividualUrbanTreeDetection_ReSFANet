@@ -294,7 +294,6 @@ def evaluate(gts, preds, min_distance, threshold_rel, threshold_abs, max_distanc
     rmse = np.sqrt(np.mean(all_tp_dists**2)) if len(all_tp_dists)>0 else np.inf 
     
     
-    print('all_tp:',all_tp, 'all_fp:', all_fp, 'all_fn',all_fn)
     
     results = {
         'precision':precision,
@@ -365,14 +364,12 @@ def save_prediction(names,dataset_path,output_path,results,preds):
     os.makedirs(saliencymap_directory, exist_ok=True)
 
     ind=0
-    total_gt=0
     h=0
 
     for name in names:
 
         name=name.decode() if isinstance(name,bytes) else str(name)
         image_file=os.path.join(images_directory,f'{name}.tif')
-        #print(image_file)
 
         with rasterio.open(image_file) as src:
             image_data = src.read()
@@ -412,10 +409,8 @@ def save_prediction(names,dataset_path,output_path,results,preds):
             #ground truth
             gt_locs = results['gt_locs'][ind]
             
-            #print('#tp:',len(tp_locs),'#fp:',len(fp_locs),'#fn:',len(fn_locs),'#gt:',len(gt_locs))
             
             
-            total_gt=total_gt+len(gt_locs)
             #generate a geodataframe
             geodataframe = gpd.GeoDataFrame(columns=['geometry', 'label'])
             
@@ -447,14 +442,11 @@ def save_prediction(names,dataset_path,output_path,results,preds):
                 point=Point(x,y)
                 geodataframe.loc[k+index]={'geometry':point,'label':'false negative'}
 
-            #print('fino a qui arrivo')
-            #print(geodataframe)
             geodataframe = geodataframe.set_geometry('geometry')
             geodataframe.crs = crs
             geodataframe.to_file(os.path.join(directory_path,f'{name}_labaled_pred.geojson'), driver='GeoJSON')
             ind=ind+1
             
-    print('tot_gt_points:',total_gt)
     return
             
 
