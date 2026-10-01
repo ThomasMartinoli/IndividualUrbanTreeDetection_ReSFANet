@@ -117,6 +117,21 @@ It is derived from [jonathanventura/urban-tree-detection](https://github.com/jon
 
 ### Citation ###
 
-This work builds upon the urban tree detection method and code by Ventura et al. If you use this repository, please also cite their paper:
+If you use this repository, please cite:
+
+T. Martinoli, L. Morandini, and P. Fraternali (2026). [Individual Urban Tree Detection from Multispectral Satellite Imagery via Point-Supervised Deep Learning.](https://doi.org/10.3390/rs18122021) Remote Sensing, 18(12), 2021.
+
+    @article{martinoli2026individual,
+      title   = {Individual Urban Tree Detection from Multispectral Satellite Imagery via Point-Supervised Deep Learning},
+      author  = {Martinoli, Thomas and Morandini, Luca and Fraternali, Piero},
+      journal = {Remote Sensing},
+      volume  = {18},
+      number  = {12},
+      pages   = {2021},
+      year    = {2026},
+      doi     = {10.3390/rs18122021}
+    }
+
+This work builds upon the urban tree detection method and code by Ventura et al.; please also cite their paper:
 
 J. Ventura, C. Pawlak, M. Honsberger, C. Gonsalves, J. Rice, N.L.R. Love, S. Han, V. Nguyen, K. Sugano, J. Doremus, G.A. Fricker, J. Yost, and M. Ritter (2024). [Individual Tree Detection in Large-Scale Urban Environments using High-Resolution Multispectral Imagery.](https://www.sciencedirect.com/science/article/pii/S1569843224002024) International Journal of Applied Earth Observation and Geoinformation, 130, 103848.
